@@ -1,0 +1,254 @@
+---
+title: "NYCPD"
+author: "Edouard Robeyns"
+date: '2022-04-24'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Introduction
+
+This file is attempting to explore the NYPD Shooting Incident Data (Historic) available at https://catalog.data.gov/dataset
+
+I will explore three aspects of the data:
+
+1. **geographical**: are there areas more affected than others?
+2. **demographical**: are there groups of people more affected or responsible than others?
+3. **temporal**: does the frequency of incidents changes over time?
+
+### Library preparation
+
+In order to access convenient functions, some packages must be imported.
+
+```{r libary}
+# use tidyverse
+library(tidyverse)
+# use lubridate
+library(lubridate)
+```
+
+### Import data
+
+First let's import the data. While there is a single file to import, I will use the same method as displayed during the course, because I intend to keep this file as reference for later works. The main dataframe containing all the data will be named _nycpd_.
+
+```{r import}
+# save url
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/"
+# save file name
+file_names <- c("rows.csv")
+# concate url and file name
+urls <- str_c(url_in, file_names)
+# download the file content into a dataframe
+nycpd <- read_csv(urls[1])
+```
+
+### Data summary
+
+I always start with a summary of the data, to get an idea of the number of lines/columns, and to start identifying which columns may be relevant to the chosen areas of inquiry.
+
+```{r summary}
+#display the summary
+summary(nycpd)
+```
+
+## Analysis
+
+### Geographical data
+
+First, I will start with the geographical data. Since **Latitude** and **Longitude** are already numbers, there is no need to do any transformation, and a first plot can be done quickly:
+
+```{r geography}
+# display the incident by longitude and latitude
+ggplot(data = nycpd, aes(x = Longitude, y = Latitude)) + geom_point()
+```
+
+When displaying this graph side by side with a map of New York city, I can clearly identify some regions like _Manhattan_ or _Staten Island_. It seems to me _Bronx_ and _Brooklyn_ have the higher concentration of incidents.
+
+Looking back at the summary, I see district names in the column named **BORO** (short for borough). Doing an aggregation first and then a descending sort confirms that there have been more incidents in _Brooklyn_ and _Bronx_, while _Staten Island_ has the least.
+
+```{r borough}
+# aggregate borough data
+boro_data <- as.data.frame(table(nycpd["BORO"]))
+# sort borough data by descending frequency
+boro_data[order(-boro_data$Freq),]
+```
+
+### Demographical data
+
+Looking back at the summary, two columns contain the word _sex_: **PERP_SEX** and **VIC_SEX**. I first isolate them to aggregate the quantities separately, then concatenate the results to display them in a bar chart.
+
+```{r sex}
+# aggregate perpetrator sex data
+perp_sex_data <- table(nycpd["PERP_SEX"])
+# aggregate victim sex data
+vic_sex_data <- table(nycpd["VIC_SEX"])
+# concatenate both perpetrator and victim
+sex_data <- rbind(perp_sex_data, vic_sex_data)
+# display as a bar chart
+barplot(sex_data, beside = TRUE)
+```
+
+The result shows that _males_ both perpetuate and suffer more from shooting incidents than the other two categories combined (_female_ and _unknown_).
+
+Using the same methodology, create a similar chart for the _race_, using the columns **PERP_RACE** and **VIC_RACE**.
+
+```{r race}
+# aggregate the perpetrator race data
+perp_race_data <- table(nycpd["PERP_RACE"])
+# aggregate the victim race data
+vic_race_data <- table(nycpd["VIC_RACE"])
+# concatenate perpetrator and victim
+race_data <- rbind(perp_race_data, vic_race_data)
+# rename columns to shorter version
+colnames(race_data) <- c('Indian/Native','Asian/Islander','Black', 'Black_Hisp', 'Unknown', 'White', 'White_Hisp')
+# display as a bar chart, turn the column names for readability
+barplot(race_data, beside = TRUE, las=2, cex.names=.75)
+```
+
+Here, we can see that **Black** is the most represented category for both _perpetrator_ and _victim_ groups.
+
+Finally, I will display a bar chart for the _age group_, using the columns **PERP_AGE_GROUP** and **VIC_AGE_GROUP**.
+
+Here it was necessary to clean the data first, otherwise I could not recombine _perpetrator_ and _victim_ data back together. First, I replaced all occurrences of **\<NA\>** to **UNKNOWN**. Then I changes the special cases for **1020**, **940** and **224** to **UNKNOWN** as well. While those were probably typos, I decided better to add them to the **UNKNOWN** category rather than guessing what the original data was. Given the low number, they probably wouldn't affect the outcome in any significant way regardless.
+
+```{r age_group}
+# display list of unique perpetrator age group
+unique(nycpd["PERP_AGE_GROUP"])
+# display list of unqiue victim age group
+unique(nycpd["VIC_AGE_GROUP"])
+
+# the perpetrator has four more age group than the victim, preventing concatenation
+# I will manually fix that below
+
+# isolate perpetrator age group
+perp_age_group_list <- nycpd["PERP_AGE_GROUP"]
+# replace <NA> by UNKNOWN
+perp_age_group_list[is.na(perp_age_group_list)] <- "UNKNOWN"
+# replace 1020 by UNKNOWN
+perp_age_group_list$PERP_AGE_GROUP[perp_age_group_list$PERP_AGE_GROUP == "1020"] <- "UNKNOWN"
+# replace 940 by UNKNOWN
+perp_age_group_list$PERP_AGE_GROUP[perp_age_group_list$PERP_AGE_GROUP == "940"] <- "UNKNOWN"
+# replace 224 by UNKNOWN
+perp_age_group_list$PERP_AGE_GROUP[perp_age_group_list$PERP_AGE_GROUP == "224"] <- "UNKNOWN"
+
+# aggregate perpetrator age group
+perp_age_group_data <- table(perp_age_group_list)
+# aggregate victim age group
+vic_age_group_data <- table(nycpd["VIC_AGE_GROUP"])
+# concatenate perpetrator and victim
+age_group_data <- rbind(perp_age_group_data, vic_age_group_data)
+# display as a bar chart
+barplot(age_group_data, beside = TRUE)
+```
+
+As opposed to the last two graphs, the data for perpetrator and victim group do not match. The **UNKNOWN** in the perpetrator group nearly equals all other categories combined, while the data for the victim group present a more regular  bell curve.
+
+Also of note, the average perpetrator is younger (18-24 category) while the victim is older (25-44 category).
+
+### Temporal data
+
+In order to display a readable graph about more than 23 thousands incidents, I believe it makes sense to aggreate the numbers by month. Below, I isolate the **OCCUR_DATE** column, then change the format to _year-month_, then do the aggregation.
+
+```{r time_by_month}
+# isolate dates of incidents
+time_list <- nycpd["OCCUR_DATE"]
+# change format from character to date
+time_list <- time_list %>% mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+# remove the day to reduce granularity
+time_list$OCCUR_DATE <- format(time_list$OCCUR_DATE,'%y-%m')
+# aggregate incidents by month
+time_by_month_data <- as.data.frame(table(time_list))
+# display number of incidents by month
+ggplot(data = time_by_month_data, aes(x = time_list, y = Freq)) + geom_point()
+```
+
+While a tendency (down) can be identified, I wanted to see if it would be more defined if the aggregation was by year.
+
+The below graph uses the same sequence of data transformation but aggregate by year.
+
+```{r time_by_year}
+# isolate dates of incidents
+time_list <- nycpd["OCCUR_DATE"]
+# change format from character to date
+time_list <- time_list %>% mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+# remove the month and the day to reduce granularity furhter
+time_list$OCCUR_DATE <- format(time_list$OCCUR_DATE,'%y')
+# aggregate incidents by year
+time_by_year_data <- as.data.frame(table(time_list))
+# display number of incidents by year
+ggplot(data = time_by_year_data, aes(x = time_list, y = Freq)) + geom_point()
+```
+
+Here the down tendency is more clearly visible.
+
+Of note is the last year of the graph, nearly as high as the first year and not following the overall trend of the graph. This is a clear outsider.
+
+## Model
+
+### Model by month prediction
+
+Using a linear model regression, we can easily update the incident per graph to display a simple prediction.
+
+```{r model_by_month}
+# create model using linear model function
+# using as.numeric to transform time_list is absolutely essential
+mod <- lm(Freq ~ as.numeric(time_list), data=time_by_month_data)
+# generate the prediction
+time_by_month_with_model <- time_by_month_data %>% mutate(pred = predict(mod))
+# plot the data with the prediction, original is blue, prediction is red
+time_by_month_with_model %>% ggplot() + geom_point(aes(x = time_list, y = Freq), color = "blue") + geom_point(aes(x = time_list, y = pred), color = "red")
+
+```
+
+As expected, the overall tendency is down, making the last months clear outliers.
+
+### Model by year prediction
+
+Likewise, we update the graph of the yearly count to add a simple linear model.
+
+```{r model_by_year}
+# create model using linear model function
+# using as.numeric to transform time_list is absolutely essential
+mod <- lm(Freq ~ as.numeric(time_list), data=time_by_year_data)
+# generate the prediction
+time_by_year_with_model <- time_by_year_data %>% mutate(pred = predict(mod))
+# plot the data with the prediction, original is blue, prediction is red
+time_by_year_with_model %>% ggplot() + geom_point(aes(x = time_list, y = Freq), color = "blue") + geom_point(aes(x = time_list, y = pred), color = "red")
+
+```
+
+Again, the down tendency is even more noticeable.
+
+## Bias
+
+### Potential Bias from the sources
+
+Given the initial data set is a record of _reported_ incidents, the first and greatest bias is that not all incidents are reported. Furthermore, it is unlikely for the missing incidents to be uniformly missing. In other words, it is not feasible to expect the missing data to either enhance and diminish the observable tendencies.
+
+The lack of density data pertaining to the geography or demography prevents the making of some conclusions. For example, is there twice as much incident in Brooklyn than Manhattan because there are twice as many people living there? So, while the conclusion comes from the data, it may disproportionately vilify a particular group, even though the ratio of incidents may not be different that any other group.
+
+### Potential Bias from the author
+
+One obvious bias from me was to re-categorize **\<NA\>** as **UNKNOWN**. An alternative would have been to add the **\<NA\>** category to the _victim_ group.
+
+Another bias are the chosen areas of focus of this file: geographical, demographical and temporal.
+
+## Closing thoughts
+
+### Conclusion
+
+While not in-depth, the following tendencies can be extracted from the analysis made in this file:
+
+1. most incidents appear in Brooklyn or Bronx boroughs
+2. the average perpetrator is a young black man, while the average victim is a middle-aged black man
+3. while the latest months of the file display an increase of incidents, the overall tendency is a decrease of incidents over the period represented
+
+### Session info
+
+Here are the session info.
+
+```{r session_info}
+# display session info
+sessionInfo()
+```

@@ -1,0 +1,244 @@
+---
+title: "John Hopkins COVID-19"
+author: "Edouard Robeyns"
+date: '2022-04-25'
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Introduction
+
+Being a foreigner living in China, the recent lockdowns in **Guangdong** (where I live) and **Shanghai** are of particular interest to me. During this short analysis, I will try to identify which of the two areas is preferable.
+
+### Library preparation
+
+In order to access convenient functions, some packages must be imported.
+
+```{r libary}
+# use tidyverse
+library(tidyverse)
+# use lubridate
+library(lubridate)
+```
+
+### Import data
+
+First let's import the data. I will use the same method displayed during the course, because I intend to keep this file as reference for later works.
+
+The files are available here at the time of writing (April 2022): [link](https://github.com/CSSEGISandData/COVID-19/raw/master/csse_covid_19_data/csse_covid_19_time_series/)
+
+```{r import}
+# save url
+url_in <- "https://github.com/CSSEGISandData/COVID-19/raw/master/csse_covid_19_data/csse_covid_19_time_series/"
+# save file names
+file_names <- c(
+  "time_series_covid19_confirmed_US.csv",
+  "time_series_covid19_confirmed_global.csv",
+  "time_series_covid19_deaths_US.csv",
+  "time_series_covid19_deaths_global.csv",
+  "time_series_covid19_recovered_global.csv"
+)
+# concate url and file names
+urls <- str_c(url_in, file_names)
+# download the file content into dataframes
+confirmed_us <- read_csv(urls[1])
+confirmed_global <- read_csv(urls[2])
+deaths_us <- read_csv(urls[3])
+deaths_global <- read_csv(urls[4])
+recovered_global <- read_csv(urls[5])
+```
+
+### Data summary
+
+I always start with a summary of the data, to get an idea of the number of lines/columns, and to start identifying which columns may be relevant to the chosen areas of inquiry.
+
+I intentionally cut the dates columns out to shorten the document.
+
+```{r summary}
+# display the summary
+summary(confirmed_global[1:4])
+```
+
+## Analysis
+
+First, I will clean the global cases files:
+
+* pivot the _date_/_case_ to have one _case_ number per _date_
+* rename _Country_ and _Province_ columns
+* transform the _date_ column to _R type date_
+* remove _Latitude_ and _Longitude_ which are not relevant
+
+
+```{r global_cases}
+# global cases
+global_cases <- confirmed_global %>% 
+  pivot_longer(cols = -c("Province/State", "Country/Region", Lat, Long),
+               names_to = "date",
+                values_to = "cases") %>%
+  rename(Country_region = "Country/Region",
+         Province_state = "Province/State") %>%
+  mutate(date = mdy(date)) %>%
+  select(-c(Lat, Long))
+```
+
+### Guangdong region cases
+
+First, let's isolate the cases for **Guangdong**. Once filtered, I remove the _Province_ column to unify the data with subsequent dataframes. I will use the color blue, and a log10 scale for better readability.
+
+```{r guangdong cases}
+# filter data for Guangdong proving only
+guangdong_cases <- global_cases %>% filter(global_cases$Country_region == "China", global_cases$Province_state == "Guangdong")
+# remove the province column
+guangdong_cases$Province_state <- NULL
+
+# plot the result
+ggplot() + geom_point(data=guangdong_cases, aes(x = date, y = cases), color="blue") + scale_y_log10()
+```
+
+### Shanghai region cases
+
+Then, let's do the same with **Shanghai**. I will use the color red.
+
+```{r shanghai cases}
+# filter data for Shanghai proving only
+shanghai_cases <- global_cases %>% filter(global_cases$Country_region == "China", global_cases$Province_state == "Shanghai")
+# remove the province column
+shanghai_cases$Province_state <- NULL
+
+# plot the result
+ggplot() + geom_point(data=shanghai_cases, aes(x = date, y = cases), color="red") + scale_y_log10()
+```
+
+### China region cases
+
+In order to have a good reference point, let's add the **Chinese** average. I will use the color purple.
+
+```{r china cases}
+# filter data for all provinces of China
+china_cases <- global_cases %>% filter(global_cases$Country_region == "China")
+# remove the province column
+china_cases$Province_state <- NULL
+# average the cases per date
+china_cases <- aggregate(cases ~ date, china_cases, mean)
+
+# plot the result
+ggplot() + geom_point(data=china_cases, aes(x = date, y = cases), color="purple") + scale_y_log10()
+```
+
+### World region cases
+
+Finally, let's add the **world** average as well. I will use the color green.
+
+```{r world cases}
+# select only only cases and date column for the whole world
+world_cases <- global_cases %>% select(3:4)
+# average the cases per date
+world_cases <- aggregate(cases ~ date, world_cases, mean)
+
+# plot the result
+ggplot() + geom_point(data=world_cases, aes(x = date, y = cases), color="green") + scale_y_log10()
+```
+
+### Combining
+
+Finally, let's display all 4 dataframes onto a graph, keeping the same colors.
+
+```{r combining}
+# add all 4 dataframes to a single graph
+ggplot() +
+  geom_point(data=guangdong_cases, aes(x = date, y = cases), color="blue") +
+  geom_point(data=shanghai_cases, aes(x = date, y = cases), color="red") +
+  geom_point(data=china_cases, aes(x = date, y = cases), color="purple") +
+  geom_point(data=world_cases, aes(x = date, y = cases), color="green") +
+  scale_y_log10()
+```
+
+Several points can be made:
+
+* the **world** line (green) displays a well-defined logarithm curve. Since the graph is using a log10 on the y axis, it means the rate was steadily linear throughout the 2+ years of pandemic
+* all 3 curves for **China**, **Guangdong** and **Shanghai** display the overall same pattern: a steep increase at the beginning of 2020 (the initial outbreak of the virus), then a very 'flat' period until early 2022 when a second outbreak happened
+* **Shanghai** was doing much better than **Guangdong** during the 2020 outbreak
+* while **Guangdong** curve was higher than **Shanghai** curve, **Shanghai** had a steeper curve and reached the same levels by the end of 2021
+* the last outbreak of early 2022 started later in **Guangdong** than on average in **China**, and later still in **Shanghai**
+* during the last outbreak, while **Guangdong** was doing initially worse than **Shanghai**, the situation clearly was quickly under control, while **Shanghai** situation is quickly catching up to the national average
+* while **Shanghai** situation is a lot worse than **Guangdong**'s (this is a logarithmic scale, so around 10 times worse), both are still below the national average, and **China** is still doing a lot better than the **world** average
+
+## Model
+
+### Linear model
+
+Since **Shanghai** was doing better than **Guangdong** during the first outbreak, but worse during the second outbreak, it is hard to define which city is overall safest.
+
+Using a linear regression may help answer this question.
+
+```{r linear model}
+# create Guangdong model
+guangdong_mod <- lm(as.numeric(cases) ~ as.numeric(date), data=guangdong_cases)
+# generate prediction for Guangdong
+guangdong_cases_with_model <- guangdong_cases %>% mutate(pred = predict(guangdong_mod))
+
+# create Shanghai model
+shanghai_mod <- lm(as.numeric(cases) ~ as.numeric(date), data=shanghai_cases)
+# generate predictions for Shanghai
+shanghai_cases_with_model <- shanghai_cases %>% mutate(pred = predict(shanghai_mod))
+
+# plot both, models are darker colors
+ggplot() +
+  geom_point(data=guangdong_cases_with_model, aes(x = date, y = cases), color = "blue") +
+  geom_point(data=guangdong_cases_with_model, aes(x = date, y = pred), color = "blue4") +
+  geom_point(data=shanghai_cases_with_model, aes(x = date, y = cases), color = "red") +
+  geom_point(data=shanghai_cases_with_model, aes(x = date, y = pred), color = "red4") +
+  scale_y_log10()
+```
+
+This graph is very to read, the model prediction for **Shanghai** start much later than **Guangdong**'s, and ends up slightly higher. Both curve have the same shape, making conclusion hazardous. Furthermore, R displays 3 warnings, lowering the confidence to use this graph.
+
+### Quadratic model
+
+A linear model only show the overall tendency, and may not be the best fit for the data. Next, I will use a quadratic model and see if it provides better insights.
+
+```{r quadratic model}
+# add squared date to Guangdong data
+guangdong_cases$date2 <- as.numeric(guangdong_cases$date)^2
+# create Guangdong model
+guangdong_mod <- lm(as.numeric(cases) ~ as.numeric(date) + date2, data=guangdong_cases)
+# generate prediction for Guangdong
+guangdong_cases_with_model <- guangdong_cases %>% mutate(pred = predict(guangdong_mod))
+
+# add squared date to Shanghai data
+shanghai_cases$date2 <- as.numeric(shanghai_cases$date)^2
+# create Shanghai model
+shanghai_mod <- lm(as.numeric(cases) ~ as.numeric(date) + date2, data=shanghai_cases)
+# generate prediction for Shanghai
+shanghai_cases_with_model <- shanghai_cases %>% mutate(pred = predict(shanghai_mod))
+
+# plot both, models are darker colors
+ggplot() +
+  geom_point(data=guangdong_cases_with_model, aes(x = date, y = cases), color = "blue") +
+  geom_point(data=guangdong_cases_with_model, aes(x = date, y = pred), color = "blue4") +
+  geom_point(data=shanghai_cases_with_model, aes(x = date, y = cases), color = "red") +
+  geom_point(data=shanghai_cases_with_model, aes(x = date, y = pred), color = "red4") +
+  scale_y_log10()
+```
+
+This is more interesting. First, R does not display any warning. Second, the curves cross at two points. The surface enclosed between the curves before mid-2021 is visually greater than the surface between them after. This would tend to indicate that on average, **Shanghai** was safer than **Guangdong**.
+
+## Conclusion
+
+At the time of writing of this document (April 2022), recent events on social media and in the news are painting a dire situation in **Shanghai**. Looking at the data and the above analysis makes me realize to temperate my feeling. Overall, **Shanghai** fared better than **Guangdong** during the whole pandemic. And while the situation is worrisome at the moment, those numbers are still below **Chinese** average and far below the **world** average.
+
+### Bias
+
+Since I am living in **Guangdong**, it is obvious I have an inherent bias toward the city I live in. Furthermore, the choice of **Shanghai** was motivated by visibility on social media, and any number of other Chinese city could have been of interest.
+
+The choice to restrict to only two cities, while motivated by a desired to not over-extend this document, is also a source of bias. I added the **Chinese** and **world** averages in an effort to balance any misrepresentation.
+
+### Session info
+
+Here are the session info.
+
+```{r session_info}
+# display session info
+sessionInfo()
+```
